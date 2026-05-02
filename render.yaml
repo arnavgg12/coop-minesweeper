@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: coop-minesweeper
+    runtime: node
+    plan: free
+    buildCommand: npm run install:all && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
