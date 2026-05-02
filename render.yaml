@@ -8,3 +8,8 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
+      # Render sets NODE_ENV=production by default, which makes `npm install`
+      # skip devDependencies. The client build needs TypeScript, Vite, and
+      # @types/react (all dev deps), so force npm to include them.
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"
