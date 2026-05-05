@@ -130,8 +130,17 @@ button.link:hover { text-decoration: underline; }
 .player-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
 
 .board-wrap {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  padding: 20px; overflow: auto;
+  flex: 1;
+  display: flex;
+  /* `safe center` falls back to flex-start when the content overflows, so the
+     full board can be reached by scrolling. Without `safe`, centered overflow
+     hides the left edge with no way to scroll back to it. */
+  align-items: safe center;
+  justify-content: safe center;
+  padding: 20px;
+  overflow: auto;
+  /* Make momentum-scroll feel native on iOS */
+  -webkit-overflow-scrolling: touch;
 }
 
 .board {
@@ -222,7 +231,17 @@ button.link:hover { text-decoration: underline; }
 
 /* Phone-sized — most layout reflow happens here. */
 @media (max-width: 600px) {
-  .board { --cell-size: 26px; }
+  /* Cell size scales to fit the viewport when reasonable, never below the
+     minimum tap target. Formula:
+       min(preferred, max(min-tappable, fit-to-width))
+     The 40px subtractor accounts for wrap padding (8+8) plus board padding
+     and inter-cell gaps:
+     – Beginner (9 cols): falls through to preferred 26px (board fits easily).
+     – Intermediate (16 cols): becomes ~21px so the whole board fits on a 375 px phone.
+     – Expert (30 cols): clamps to the 20px minimum and the board scrolls. */
+  .board {
+    --cell-size: min(26px, max(20px, (100vw - 40px) / var(--cols, 9)));
+  }
 
   /* Stack the topbar so HUD/players don't fight for horizontal space. */
   .topbar {
@@ -250,7 +269,21 @@ button.link:hover { text-decoration: underline; }
   .remote-cursor { display: none; }
 }
 
-/* Very narrow phones (≤ 360 px) — give expert mode a fighting chance. */
+/* Very narrow phones (≤ 360 px) — drop preferred and minimum a bit. */
 @media (max-width: 360px) {
-  .board { --cell-size: 22px; }
+  .board {
+    --cell-size: min(22px, max(18px, (100vw - 36px) / var(--cols, 9)));
+  }
+}
+
+/* Subtle right-edge fade hints that the board scrolls when it overflows. */
+.board-wrap {
+  background:
+    linear-gradient(to right, var(--bg), var(--bg) 0) left center / 12px 100% no-repeat,
+    linear-gradient(to right, transparent, rgba(15,23,42,0.85)) right center / 24px 100% no-repeat;
+  background-attachment: local, scroll;
+}
+@media (min-width: 901px) {
+  /* No overflow on desktop — drop the hints. */
+  .board-wrap { background: none; }
 }
