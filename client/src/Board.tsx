@@ -18,7 +18,8 @@ type Props = {
   playerColor: (id: string) => string;
 };
 
-const LONG_PRESS_MS = 400;
+const LONG_PRESS_MS = 350;     // hold duration to fire a flag
+const MOVE_TOLERANCE_PX = 8;   // movement before we consider the gesture "a swipe, not a hold"
 
 export default function Board({
   width, height, cells, status, players, meId,
@@ -27,11 +28,15 @@ export default function Board({
   const boardRef = useRef<HTMLDivElement>(null);
   const [boardSize, setBoardSize] = useState({ w: 0, h: 0 });
 
-  // Long-press tracking. Set on touchstart, cleared on touchmove/touchend.
-  // If the timer fires, we mark it "consumed" so the synthetic onClick that
-  // follows touchend doesn't also reveal the cell.
+  // ---- Long-press state (Pointer Events) -----------------------------------
+  // We use Pointer Events instead of separate touch + mouse events because
+  // they unify input across mouse, touch, and pen with consistent ordering.
+  // pointerdown → (pointermove)* → pointerup is reliable on iOS Safari,
+  // Android Chrome, and desktop. The synthetic onClick still fires after
+  // pointerup on touch, which we suppress when a long-press has fired.
   const longPressTimer = useRef<number | null>(null);
   const longPressFired = useRef(false);
+  const pointerDownAt = useRef<{ x: number; y: number; touch: boolean } | null>(null);
 
   useLayoutEffect(() => {
     const el = boardRef.current;
@@ -46,6 +51,7 @@ export default function Board({
     return () => ro.disconnect();
   }, [width, height]);
 
+  // ---- Game actions --------------------------------------------------------
   const doReveal = (idx: number) => {
     if (status !== 'playing') return;
     const cell = cells.get(idx);
@@ -60,9 +66,51 @@ export default function Board({
     onFlag(idx);
   };
 
+  // ---- Pointer handlers ----------------------------------------------------
+  const cancelLongPress = () => {
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    pointerDownAt.current = null;
+  };
+
+  const handlePointerDown = (idx: number, e: React.PointerEvent) => {
+    // Only run long-press for finger or pen input. For mouse, the user has
+    // right-click via the contextmenu handler, so we don't need a hold.
+    if (e.pointerType === 'mouse') return;
+
+    longPressFired.current = false;
+    pointerDownAt.current = { x: e.clientX, y: e.clientY, touch: true };
+
+    if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = window.setTimeout(() => {
+      // Re-check that no movement / release happened between scheduling and firing.
+      if (!pointerDownAt.current) return;
+      longPressFired.current = true;
+      doFlag(idx);
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        try { navigator.vibrate?.(15); } catch { /* ignore */ }
+      }
+    }, LONG_PRESS_MS);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const start = pointerDownAt.current;
+    if (!start) return;
+    const dx = Math.abs(e.clientX - start.x);
+    const dy = Math.abs(e.clientY - start.y);
+    if (dx > MOVE_TOLERANCE_PX || dy > MOVE_TOLERANCE_PX) cancelLongPress();
+  };
+
+  // pointerup AND pointercancel both end the gesture. We don't care which
+  // — either way, no more long-press.
+  const handlePointerEnd = () => cancelLongPress();
+
+  // ---- Click & contextmenu -------------------------------------------------
   const handleClick = (e: React.MouseEvent, idx: number) => {
     e.preventDefault();
-    // If a long-press just fired, swallow the click that browsers synthesize from touchend.
+    // Suppress the synthetic click that follows a touch-driven long-press.
     if (longPressFired.current) {
       longPressFired.current = false;
       return;
@@ -73,72 +121,36 @@ export default function Board({
 
   const handleContext = (e: React.MouseEvent, idx: number) => {
     e.preventDefault();
-    // On Android, long-press fires our timer AND a native contextmenu event.
-    // Both would call doFlag (a toggle), cancelling each other out. If our
-    // timer already flagged, skip — but keep longPressFired set so any
-    // synthetic click that follows is still suppressed.
+    // If our long-press timer already flagged this cell (e.g. on Android
+    // where the browser also dispatches contextmenu), don't toggle a second
+    // time and undo our flag.
     if (longPressFired.current) return;
     doFlag(idx);
-    // If this contextmenu came from a touch (one happened within the last
-    // second), mark long-press as fired so the synthetic click that may
-    // follow on Android is suppressed. On a real desktop right-click no
-    // touch is in progress, so we leave the flag alone — otherwise the
-    // next left-click would be incorrectly suppressed.
-    if (performance.now() - lastTouchAt.current < 1000) longPressFired.current = true;
+    // If a touch is currently in progress, mark long-press as fired so the
+    // synthetic click that may follow is suppressed. Desktop right-click
+    // sets no pointerDownAt.touch, so the next left-click works normally.
+    if (pointerDownAt.current?.touch) longPressFired.current = true;
   };
 
-  // Records the most recent touchstart time. Used to identify when a
-  // contextmenu event was triggered by a touch (Android long-press), so we
-  // can suppress the synthetic click that follows.
-  const lastTouchAt = useRef(0);
-
-  const handleTouchStart = (idx: number) => {
-    longPressFired.current = false;
-    lastTouchAt.current = performance.now();
-    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
-    longPressTimer.current = window.setTimeout(() => {
-      // If a touch-induced contextmenu already flagged this cell, don't
-      // fire a second toggle.
-      if (longPressFired.current) return;
-      longPressFired.current = true;
-      doFlag(idx);
-      // Light haptic feedback if supported.
-      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-        try { navigator.vibrate?.(15); } catch { /* ignore */ }
-      }
-    }, LONG_PRESS_MS);
-  };
-
-  // Any movement cancels the long-press. This matches the original behaviour
-  // and — importantly — lets the user swipe to scroll the board on expert
-  // mode without accidentally placing a flag mid-scroll. Real fingers
-  // generally don't move enough during a deliberate hold to fire touchmove.
-  const cancelLongPress = () => {
-    if (longPressTimer.current) {
-      window.clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
-
-  const handleMove = (e: React.MouseEvent) => {
+  // ---- Cursor for other-player tracking (mouse only) ----------------------
+  const handleMouseMove = (e: React.MouseEvent) => {
     if (!boardRef.current) return;
     const r = boardRef.current.getBoundingClientRect();
     onCursor((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
   };
-  const handleLeave = () => onCursor(null, null);
+  const handleMouseLeave = () => onCursor(null, null);
 
   return (
     <div
       ref={boardRef}
       className="board"
       style={{
-        // Use CSS custom properties so styles.css media queries can size cells responsively.
         // @ts-expect-error - custom CSS properties aren't in React's CSSProperties type.
         '--cols': width,
         '--rows': height,
       }}
-      onMouseMove={handleMove}
-      onMouseLeave={handleLeave}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
     >
       {Array.from({ length: width * height }, (_, idx) => {
         const cell = cells.get(idx);
@@ -174,17 +186,18 @@ export default function Board({
             style={lastBorder ? { boxShadow: `inset 0 0 0 2px ${lastBorder}` } : undefined}
             onClick={(e) => handleClick(e, idx)}
             onContextMenu={(e) => handleContext(e, idx)}
-            onTouchStart={() => handleTouchStart(idx)}
-            onTouchMove={cancelLongPress}
-            onTouchEnd={cancelLongPress}
-            onTouchCancel={cancelLongPress}
+            onPointerDown={(e) => handlePointerDown(idx, e)}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerEnd}
+            onPointerCancel={handlePointerEnd}
+            onPointerLeave={handlePointerEnd}
           >
             {content}
           </div>
         );
       })}
 
-      {/* Live cursors of other players */}
+      {/* Live cursors of other players (desktop only — hidden on phone in CSS) */}
       {players
         .filter((p) => p.id !== meId && p.cursor)
         .map((p) => (
