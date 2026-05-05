@@ -30,13 +30,13 @@ input, select { font: inherit; }
 .lobby {
   min-height: 100%;
   display: flex; align-items: center; justify-content: center;
-  padding: 24px;
+  padding: 16px;
 }
 .lobby-card {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 32px;
+  padding: clamp(20px, 5vw, 32px);
   width: 100%;
   max-width: 420px;
   box-shadow: 0 20px 50px rgba(0,0,0,0.4);
@@ -135,22 +135,31 @@ button.link:hover { text-decoration: underline; }
 }
 
 .board {
+  /* --cell-size and column/row counts come from the Board component or media queries below. */
+  --cell-size: 30px;
   display: grid;
+  grid-template-columns: repeat(var(--cols, 9), var(--cell-size));
+  grid-template-rows: repeat(var(--rows, 9), var(--cell-size));
   position: relative;
   background: #94a3b8;
   padding: 4px;
   border-radius: 6px;
   gap: 1px;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;          /* disable iOS long-press text-callout/copy menu */
+  touch-action: manipulation;            /* eliminate 300ms tap delay on iOS */
   box-shadow: 0 10px 30px rgba(0,0,0,0.3);
 }
 
 .cell {
   background: var(--cell);
   display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 16px;
+  font-weight: 700;
+  font-size: calc(var(--cell-size) * 0.55);
   cursor: pointer; transition: background 0.05s;
   font-variant-numeric: tabular-nums;
+  -webkit-tap-highlight-color: transparent;
 }
 .cell:hover:not(.revealed) { background: var(--cell-hi); }
 .cell.revealed { background: var(--cell-revealed); cursor: default; }
@@ -186,4 +195,62 @@ button.link:hover { text-decoration: underline; }
 .hints kbd {
   background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
   padding: 1px 6px; font-family: inherit; color: var(--text);
+}
+.hint-mobile { display: none; }
+
+/* Flag-mode toggle — always visible, prominent on touch devices. */
+.flag-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; background: var(--bg); color: var(--text-dim);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-weight: 600; font-size: 13px;
+  -webkit-tap-highlight-color: transparent;
+}
+.flag-toggle:hover { color: var(--text); border-color: var(--text-dim); }
+.flag-toggle.on {
+  background: #fbbf24; color: #422006; border-color: #f59e0b;
+}
+.flag-toggle .flag-icon { font-size: 14px; }
+
+/* ------------------- Responsive ------------------- */
+/* Tablet & smaller — shrink the cells. */
+@media (max-width: 900px) {
+  .board { --cell-size: 28px; }
+  .topbar { padding: 10px 14px; gap: 10px; }
+  .board-wrap { padding: 12px; }
+}
+
+/* Phone-sized — most layout reflow happens here. */
+@media (max-width: 600px) {
+  .board { --cell-size: 26px; }
+
+  /* Stack the topbar so HUD/players don't fight for horizontal space. */
+  .topbar {
+    flex-direction: column; align-items: stretch; gap: 8px;
+    padding: 10px 12px;
+  }
+  .room-meta { justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .code-pill { padding: 4px 10px; }
+  .code-pill .label { display: none; }                 /* save space — "Room" label is implied */
+  .hud { flex-wrap: wrap; gap: 8px; justify-content: flex-start; }
+  .hud-item { padding: 5px 8px; font-size: 13px; }
+  .status-chip { padding: 5px 10px; font-size: 12px; }
+  .players { gap: 5px; }
+  .player-chip { padding: 3px 8px; font-size: 11px; }
+
+  .board-wrap { padding: 8px; align-items: flex-start; }
+
+  /* Swap the hint line for a touch-relevant version. */
+  .hint-desktop { display: none; }
+  .hint-mobile { display: inline; }
+  .hints { padding: 8px 12px; gap: 10px; }
+
+  /* Hide other players' cursors on mobile — they're not useful without a mouse,
+     and they overlap fingertips. */
+  .remote-cursor { display: none; }
+}
+
+/* Very narrow phones (≤ 360 px) — give expert mode a fighting chance. */
+@media (max-width: 360px) {
+  .board { --cell-size: 22px; }
 }

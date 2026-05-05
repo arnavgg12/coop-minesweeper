@@ -25,6 +25,8 @@ export default function Game({ room, me, onLeave }: Props) {
 
   const send = (action: GameAction) => socket.emit('game:action', action);
 
+  // When on, taps flag instead of reveal. Essential on touch devices that have no right-click.
+  const [flagMode, setFlagMode] = useState(false);
   const [copied, setCopied] = useState(false);
   const copyCode = async () => {
     try {
@@ -91,8 +93,18 @@ export default function Game({ room, me, onLeave }: Props) {
             {game.status === 'won' && '🎉 You won!'}
             {game.status === 'lost' && '💥 Boom — try again'}
           </div>
+          <button
+            type="button"
+            className={`flag-toggle ${flagMode ? 'on' : ''}`}
+            onClick={() => setFlagMode((v) => !v)}
+            aria-pressed={flagMode}
+            title="Toggle flag mode (taps will flag instead of reveal)"
+          >
+            <span className="flag-icon">⚑</span>
+            <span className="flag-label">Flag</span>
+          </button>
           {game.status !== 'playing' && (
-            <button className="primary small" onClick={() => send({ kind: 'reset' })}>
+            <button className="primary small" onClick={() => { send({ kind: 'reset' }); setFlagMode(false); }}>
               New game
             </button>
           )}
@@ -117,6 +129,7 @@ export default function Game({ room, me, onLeave }: Props) {
           players={players}
           meId={me.id}
           numberColors={NUMBER_COLORS}
+          flagMode={flagMode}
           onReveal={(idx) => send({ kind: 'reveal', idx })}
           onFlag={(idx) => send({ kind: 'flag', idx })}
           onChord={(idx) => send({ kind: 'chord', idx })}
@@ -127,9 +140,9 @@ export default function Game({ room, me, onLeave }: Props) {
       </main>
 
       <footer className="hints">
-        <span><kbd>Click</kbd> reveal</span>
-        <span><kbd>Right-click</kbd> flag</span>
-        <span><kbd>Click</kbd> a number with all its mines flagged to chord</span>
+        <span className="hint-desktop"><kbd>Click</kbd> reveal · <kbd>Right-click</kbd> flag</span>
+        <span className="hint-mobile">Tap to reveal · Long-press or toggle <kbd>⚑ Flag</kbd> to flag</span>
+        <span className="hint-desktop">Click a number with all its mines flagged to chord</span>
       </footer>
     </div>
   );

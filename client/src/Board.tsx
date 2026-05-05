@@ -9,6 +9,7 @@ type Props = {
   players: Player[];
   meId: string;
   numberColors: string[];
+  flagMode: boolean;
   onReveal: (idx: number) => void;
   onFlag: (idx: number) => void;
   onChord: (idx: number) => void;
@@ -17,14 +18,20 @@ type Props = {
   playerColor: (id: string) => string;
 };
 
-const CELL = 30;
+const LONG_PRESS_MS = 400;
 
 export default function Board({
   width, height, cells, status, players, meId,
-  numberColors, onReveal, onFlag, onChord, onCursor, lastAction, playerColor,
+  numberColors, flagMode, onReveal, onFlag, onChord, onCursor, lastAction, playerColor,
 }: Props) {
   const boardRef = useRef<HTMLDivElement>(null);
   const [boardSize, setBoardSize] = useState({ w: 0, h: 0 });
+
+  // Long-press tracking. Set on touchstart, cleared on touchmove/touchend.
+  // If the timer fires, we mark it "consumed" so the synthetic onClick that
+  // follows touchend doesn't also reveal the cell.
+  const longPressTimer = useRef<number | null>(null);
+  const longPressFired = useRef(false);
 
   useLayoutEffect(() => {
     const el = boardRef.current;
@@ -39,20 +46,54 @@ export default function Board({
     return () => ro.disconnect();
   }, [width, height]);
 
-  const handleClick = (e: React.MouseEvent, idx: number) => {
-    e.preventDefault();
+  const doReveal = (idx: number) => {
     if (status !== 'playing') return;
     const cell = cells.get(idx);
     if (cell?.revealed && cell.adjacent > 0) onChord(idx);
     else onReveal(idx);
   };
 
-  const handleContext = (e: React.MouseEvent, idx: number) => {
-    e.preventDefault();
+  const doFlag = (idx: number) => {
     if (status !== 'playing') return;
     const cell = cells.get(idx);
     if (cell?.revealed) return;
     onFlag(idx);
+  };
+
+  const handleClick = (e: React.MouseEvent, idx: number) => {
+    e.preventDefault();
+    // If a long-press just fired, swallow the click that browsers synthesize from touchend.
+    if (longPressFired.current) {
+      longPressFired.current = false;
+      return;
+    }
+    if (flagMode) doFlag(idx);
+    else doReveal(idx);
+  };
+
+  const handleContext = (e: React.MouseEvent, idx: number) => {
+    e.preventDefault();
+    doFlag(idx);
+  };
+
+  const handleTouchStart = (idx: number) => {
+    longPressFired.current = false;
+    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = window.setTimeout(() => {
+      longPressFired.current = true;
+      doFlag(idx);
+      // Light haptic feedback if supported.
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        try { navigator.vibrate?.(15); } catch { /* ignore */ }
+      }
+    }, LONG_PRESS_MS);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
   };
 
   const handleMove = (e: React.MouseEvent) => {
@@ -67,8 +108,10 @@ export default function Board({
       ref={boardRef}
       className="board"
       style={{
-        gridTemplateColumns: `repeat(${width}, ${CELL}px)`,
-        gridTemplateRows: `repeat(${height}, ${CELL}px)`,
+        // Use CSS custom properties so styles.css media queries can size cells responsively.
+        // @ts-expect-error - custom CSS properties aren't in React's CSSProperties type.
+        '--cols': width,
+        '--rows': height,
       }}
       onMouseMove={handleMove}
       onMouseLeave={handleLeave}
@@ -107,6 +150,10 @@ export default function Board({
             style={lastBorder ? { boxShadow: `inset 0 0 0 2px ${lastBorder}` } : undefined}
             onClick={(e) => handleClick(e, idx)}
             onContextMenu={(e) => handleContext(e, idx)}
+            onTouchStart={() => handleTouchStart(idx)}
+            onTouchMove={cancelLongPress}
+            onTouchEnd={cancelLongPress}
+            onTouchCancel={cancelLongPress}
           >
             {content}
           </div>
