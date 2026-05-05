@@ -121,6 +121,33 @@ button.link:hover { text-decoration: underline; }
 .status-won { color: #86efac; border-color: #166534; }
 .status-lost { color: #fca5a5; border-color: #991b1b; }
 
+/* Connection indicator — appears in the HUD only when the socket is down. */
+.conn-indicator {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border-radius: 6px;
+  background: rgba(252, 165, 165, 0.12);
+  border: 1px solid #991b1b;
+  color: #fca5a5;
+  font-size: 12px; font-weight: 600;
+}
+.conn-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #ef4444;
+  animation: connPulse 1.2s ease-in-out infinite;
+}
+@keyframes connPulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.25); }
+}
+
+/* When disconnected, dim the board to make it visibly frozen so users know
+   their taps won't register until the connection comes back. */
+.game.is-disconnected .board-wrap {
+  opacity: 0.55;
+  filter: grayscale(0.3);
+  transition: opacity 0.2s, filter 0.2s;
+}
+
 .players { display: flex; gap: 6px; flex-wrap: wrap; }
 .player-chip {
   display: inline-flex; align-items: center; gap: 6px;

@@ -3,11 +3,11 @@ import { socket } from './socket';
 import type { CellView, GameAction, Player, RoomState } from './types';
 import Board from './Board';
 
-type Props = { room: RoomState; me: Player; onLeave: () => void };
+type Props = { room: RoomState; me: Player; connected: boolean; onLeave: () => void };
 
 const NUMBER_COLORS = ['', '#1d4ed8', '#15803d', '#b91c1c', '#581c87', '#7c2d12', '#0e7490', '#000', '#525252'];
 
-export default function Game({ room, me, onLeave }: Props) {
+export default function Game({ room, me, connected, onLeave }: Props) {
   const { game, players } = room;
 
   // Build a sparse cell map from the server's compact payload.
@@ -66,7 +66,7 @@ export default function Game({ room, me, onLeave }: Props) {
     : 0;
 
   return (
-    <div className="game">
+    <div className={`game ${connected ? '' : 'is-disconnected'}`}>
       <header className="topbar">
         <div className="room-meta">
           <button className="ghost" onClick={onLeave}>← Leave</button>
@@ -93,6 +93,15 @@ export default function Game({ room, me, onLeave }: Props) {
             {game.status === 'won' && '🎉 You won!'}
             {game.status === 'lost' && '💥 Boom — try again'}
           </div>
+          {!connected && (
+            <span
+              className="conn-indicator"
+              title="Lost connection to server. Reconnecting and rejoining your room — your moves won't register until the dot turns green again."
+            >
+              <span className="conn-dot" />
+              Reconnecting…
+            </span>
+          )}
           <button
             type="button"
             className={`flag-toggle ${flagMode ? 'on' : ''}`}
