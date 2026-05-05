@@ -73,11 +73,32 @@ export default function Board({
 
   const handleContext = (e: React.MouseEvent, idx: number) => {
     e.preventDefault();
+    // On Android, long-press fires our timer AND a native contextmenu event.
+    // Both would call doFlag (a toggle), cancelling each other out. If our
+    // timer already flagged, skip — but keep longPressFired set so any
+    // synthetic click that follows is still suppressed.
+    if (longPressFired.current) return;
     doFlag(idx);
+    // If this contextmenu came from a touch (one happened within the last
+    // second), mark long-press as fired so the synthetic click that may
+    // follow on Android is suppressed. On a real desktop right-click no
+    // touch is in progress, so we leave the flag alone — otherwise the
+    // next left-click would be incorrectly suppressed.
+    if (performance.now() - lastTouchAt.current < 1000) longPressFired.current = true;
   };
 
-  const handleTouchStart = (idx: number) => {
+  // Track the starting touch position so small finger drift doesn't cancel
+  // the long-press timer. Without this, ~3 px of natural finger wobble was
+  // killing the timer before it could fire on some devices.
+  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
+  const lastTouchAt = useRef(0); // Used to recognize touch-induced contextmenu events.
+  const TOUCH_TOLERANCE_PX = 10;
+
+  const handleTouchStart = (idx: number, e: React.TouchEvent) => {
     longPressFired.current = false;
+    lastTouchAt.current = performance.now();
+    const t = e.touches[0];
+    touchStartPos.current = t ? { x: t.clientX, y: t.clientY } : null;
     if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
     longPressTimer.current = window.setTimeout(() => {
       longPressFired.current = true;
@@ -89,11 +110,21 @@ export default function Board({
     }, LONG_PRESS_MS);
   };
 
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartPos.current) return;
+    const t = e.touches[0];
+    if (!t) return;
+    const dx = Math.abs(t.clientX - touchStartPos.current.x);
+    const dy = Math.abs(t.clientY - touchStartPos.current.y);
+    if (dx > TOUCH_TOLERANCE_PX || dy > TOUCH_TOLERANCE_PX) cancelLongPress();
+  };
+
   const cancelLongPress = () => {
     if (longPressTimer.current) {
       window.clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
+    touchStartPos.current = null;
   };
 
   const handleMove = (e: React.MouseEvent) => {
@@ -150,8 +181,8 @@ export default function Board({
             style={lastBorder ? { boxShadow: `inset 0 0 0 2px ${lastBorder}` } : undefined}
             onClick={(e) => handleClick(e, idx)}
             onContextMenu={(e) => handleContext(e, idx)}
-            onTouchStart={() => handleTouchStart(idx)}
-            onTouchMove={cancelLongPress}
+            onTouchStart={(e) => handleTouchStart(idx, e)}
+            onTouchMove={handleTouchMove}
             onTouchEnd={cancelLongPress}
             onTouchCancel={cancelLongPress}
           >
