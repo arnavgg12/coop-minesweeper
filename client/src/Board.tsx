@@ -87,20 +87,19 @@ export default function Board({
     if (performance.now() - lastTouchAt.current < 1000) longPressFired.current = true;
   };
 
-  // Track the starting touch position so small finger drift doesn't cancel
-  // the long-press timer. Without this, ~3 px of natural finger wobble was
-  // killing the timer before it could fire on some devices.
-  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
-  const lastTouchAt = useRef(0); // Used to recognize touch-induced contextmenu events.
-  const TOUCH_TOLERANCE_PX = 10;
+  // Records the most recent touchstart time. Used to identify when a
+  // contextmenu event was triggered by a touch (Android long-press), so we
+  // can suppress the synthetic click that follows.
+  const lastTouchAt = useRef(0);
 
-  const handleTouchStart = (idx: number, e: React.TouchEvent) => {
+  const handleTouchStart = (idx: number) => {
     longPressFired.current = false;
     lastTouchAt.current = performance.now();
-    const t = e.touches[0];
-    touchStartPos.current = t ? { x: t.clientX, y: t.clientY } : null;
     if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
     longPressTimer.current = window.setTimeout(() => {
+      // If a touch-induced contextmenu already flagged this cell, don't
+      // fire a second toggle.
+      if (longPressFired.current) return;
       longPressFired.current = true;
       doFlag(idx);
       // Light haptic feedback if supported.
@@ -110,21 +109,15 @@ export default function Board({
     }, LONG_PRESS_MS);
   };
 
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!touchStartPos.current) return;
-    const t = e.touches[0];
-    if (!t) return;
-    const dx = Math.abs(t.clientX - touchStartPos.current.x);
-    const dy = Math.abs(t.clientY - touchStartPos.current.y);
-    if (dx > TOUCH_TOLERANCE_PX || dy > TOUCH_TOLERANCE_PX) cancelLongPress();
-  };
-
+  // Any movement cancels the long-press. This matches the original behaviour
+  // and — importantly — lets the user swipe to scroll the board on expert
+  // mode without accidentally placing a flag mid-scroll. Real fingers
+  // generally don't move enough during a deliberate hold to fire touchmove.
   const cancelLongPress = () => {
     if (longPressTimer.current) {
       window.clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
-    touchStartPos.current = null;
   };
 
   const handleMove = (e: React.MouseEvent) => {
@@ -181,8 +174,8 @@ export default function Board({
             style={lastBorder ? { boxShadow: `inset 0 0 0 2px ${lastBorder}` } : undefined}
             onClick={(e) => handleClick(e, idx)}
             onContextMenu={(e) => handleContext(e, idx)}
-            onTouchStart={(e) => handleTouchStart(idx, e)}
-            onTouchMove={handleTouchMove}
+            onTouchStart={() => handleTouchStart(idx)}
+            onTouchMove={cancelLongPress}
             onTouchEnd={cancelLongPress}
             onTouchCancel={cancelLongPress}
           >
